@@ -1,0 +1,6 @@
+{
+  "name": "AEGIS - Financial Threat & Scam Intelligence",
+  "description": "Production-grade financial scam, fraud, phishing, transaction-risk, and threat intelligence platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
