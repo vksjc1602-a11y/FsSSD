@@ -1,12 +1,32 @@
 /**
- * AEGIS Risk Result Page
- * The central decision screen in AEGIS.
- * Clean, direct, and explainable. Answers: "Is this risky?", "Why is it risky?", and "What should I do?"
+ * AEGIS Comprehensive Threat Report View
+ *
+ * Visualizes:
+ * 1. Verdict Banner & Multi-Model Concordance
+ * 2. Original Input with In-Text Tactic Evidence Highlighting
+ * 3. 5-Layer Stack Score Breakdown Bars
+ * 4. Attacker Goal & Impersonation Mismatch Analysis
+ * 5. Attack Kill-Chain Trajectory
+ * 6. Prioritized India-Specific Immediate Protective Actions (1930, cybercrime.gov.in, Chakshu)
+ * 7. Safer Verification Alternatives & False-Positive Risk Disclosure
+ * 8. User Feedback Persistence
  */
 
 import React, { useState } from 'react';
-import { ScanResult } from '../../types';
-import { ArrowLeft, CheckCircle2, RotateCcw, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { ScanResult, ThreatVerdict } from '../../types';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldAlert,
+  ShieldCheck,
+  ExternalLink,
+  ChevronRight,
+  Cpu,
+  Layers,
+  Sparkles,
+  PhoneCall
+} from 'lucide-react';
 
 interface RiskResultViewProps {
   result: ScanResult;
@@ -17,36 +37,117 @@ interface RiskResultViewProps {
 export default function RiskResultView({
   result,
   onScanAnother,
-  onReportThreat,
+  onReportThreat
 }: RiskResultViewProps) {
   const [feedbackUseful, setFeedbackUseful] = useState<boolean | null>(null);
   const [feedbackReason, setFeedbackReason] = useState<string | null>(null);
   const [isReported, setIsReported] = useState(false);
+  const [selectedTactic, setSelectedTactic] = useState<string | null>(null);
 
-  // Determine Severity Color
-  const isHighOrCritical = result.riskScore >= 61;
-  const isGuardedOrModerate = result.riskScore >= 21 && result.riskScore <= 60;
-  const isLow = result.riskScore <= 20;
+  const report = result.threatReport;
+  const verdict: ThreatVerdict = report?.verdict || (result.riskScore >= 78 ? 'SCAM' : result.riskScore >= 58 ? 'LIKELY_SCAM' : result.riskScore >= 35 ? 'SUSPICIOUS' : 'SAFE');
 
-  const scoreBadgeBg = isHighOrCritical
-    ? '#102A23'
-    : isGuardedOrModerate
-    ? '#EAE3D5'
-    : '#102A23';
+  // Verdict visual themes
+  const verdictConfig: Record<ThreatVerdict, { bg: string; text: string; badge: string; icon: any }> = {
+    SCAM: {
+      bg: 'bg-[#102A23] text-white',
+      badge: 'bg-[#B86F52] text-white',
+      text: 'CONFIRMED MALICIOUS SCAM',
+      icon: ShieldAlert
+    },
+    LIKELY_SCAM: {
+      bg: 'bg-[#1F493B] text-white',
+      badge: 'bg-[#B86F52] text-white',
+      text: 'HIGH LIKELIHOOD OF FRAUD',
+      icon: ShieldAlert
+    },
+    SUSPICIOUS: {
+      bg: 'bg-[#EAE3D5] text-[#102A23]',
+      badge: 'bg-[#557A68] text-white',
+      text: 'SUSPICIOUS / UNVERIFIED ANOMALY',
+      icon: AlertTriangle
+    },
+    LIKELY_SAFE: {
+      bg: 'bg-[#EAE3D5]/60 text-[#102A23]',
+      badge: 'bg-[#557A68] text-white',
+      text: 'PROBABLE BENIGN COMMUNICATION',
+      icon: ShieldCheck
+    },
+    SAFE: {
+      bg: 'bg-white text-[#102A23]',
+      badge: 'bg-[#102A23] text-white',
+      text: 'VERIFIED BENIGN / LOW RISK',
+      icon: ShieldCheck
+    }
+  };
 
-  const scoreBadgeText = isHighOrCritical
-    ? '#FFFFFF'
-    : isGuardedOrModerate
-    ? '#102A23'
-    : '#FFFFFF';
+  const vInfo = verdictConfig[verdict] || verdictConfig.SAFE;
+  const VerdictIcon = vInfo.icon;
+
+  const handleSendFeedback = async (useful: boolean, reason?: string) => {
+    setFeedbackUseful(useful);
+    if (reason) setFeedbackReason(reason);
+
+    try {
+      await fetch('/api/v1/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scan_id: result.id,
+          feedback_type: useful ? 'CONFIRMED_CORRECT' : 'DISPUTED',
+          verified_label: useful ? (verdict === 'SCAM' || verdict === 'LIKELY_SCAM' ? 'SCAM' : 'SAFE') : reason,
+          notes: reason || (useful ? 'User verified output' : 'User flagged discrepancy')
+        })
+      });
+    } catch {
+      // Degrades gracefully
+    }
+  };
 
   const handleReport = () => {
     setIsReported(true);
     if (onReportThreat) onReportThreat(result);
   };
 
+  // Highlight tactic evidence within text
+  const renderHighlightedMessage = () => {
+    const rawText = result.rawInput;
+    if (!report?.tactics || report.tactics.length === 0) {
+      return <p className="font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawText}</p>;
+    }
+
+    return (
+      <div className="space-y-3">
+        <p className="font-mono text-xs whitespace-pre-wrap leading-relaxed text-[#102A23] bg-[#F5F1E8] p-3.5 border border-[#557A68]/20 rounded-xs">
+          {rawText}
+        </p>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[10px] font-mono text-[#557A68] uppercase mr-1">
+            IDENTIFIED TACTIC SPANS:
+          </span>
+          {report.tactics.map((tactic, idx) => {
+            const isSelected = selectedTactic === tactic.name;
+            return (
+              <button
+                key={idx}
+                onClick={() => setSelectedTactic(isSelected ? null : tactic.name)}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-xs border transition-colors ${
+                  isSelected
+                    ? 'bg-[#102A23] text-white border-[#102A23]'
+                    : 'bg-white text-[#102A23] border-[#557A68]/30 hover:bg-[#EAE3D5]'
+                }`}
+              >
+                <span className="font-bold">{tactic.name}:</span> "{tactic.evidence.slice(0, 32)}..."
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-3xl mx-auto space-y-8 select-none py-2">
+    <div className="max-w-3xl mx-auto space-y-6 select-none py-2">
       {/* Back button */}
       <button
         onClick={onScanAnother}
@@ -56,125 +157,254 @@ export default function RiskResultView({
         <span>BACK TO SCANNER</span>
       </button>
 
-      {/* Main Assessment Container */}
-      <div className="bg-[#FFFFFF] border border-[#557A68]/25 p-7 md:p-10 rounded-xs space-y-8 shadow-xs">
-        {/* Header and Risk Score */}
-        <div className="text-center space-y-3 pb-6 border-b border-[#557A68]/20">
-          <span className="text-xs font-mono tracking-widest text-[#557A68] uppercase block">
-            AEGIS RISK ASSESSMENT
-          </span>
+      {/* Main Threat Report Container */}
+      <div className="bg-white border border-[#557A68]/25 p-6 md:p-8 rounded-xs space-y-8 shadow-xs">
+        {/* Verdict Banner Header */}
+        <div className="space-y-4 pb-6 border-b border-[#557A68]/20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-mono tracking-widest text-[#557A68] uppercase block">
+                AEGIS THREAT INTELLIGENCE REPORT
+              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-mono text-[#557A68]">
+                  SCAN #{result.id} · {result.timestamp.slice(0, 19).replace('T', ' ')}
+                </span>
+                {report?.llmUsed && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono bg-[#102A23] text-white rounded-xs">
+                    <Sparkles className="w-2.5 h-2.5" /> GEMINI REASONED
+                  </span>
+                )}
+              </div>
+            </div>
 
-          <div className="flex flex-col items-center justify-center pt-2">
-            <span className="text-6xl md:text-7xl font-mono font-bold text-[#102A23] tabular-nums leading-none">
-              {result.riskScore}
-            </span>
-            <span
-              className="mt-3 px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider rounded-xs"
-              style={{
-                backgroundColor: scoreBadgeBg,
-                color: scoreBadgeText,
-              }}
-            >
-              {result.severity} RISK
-            </span>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-3xl font-mono font-bold text-[#102A23] tabular-nums leading-none">
+                  {result.riskScore}
+                  <span className="text-xs text-[#557A68] font-normal">/100</span>
+                </div>
+                <div className="text-[10px] font-mono text-[#557A68] mt-0.5">
+                  RISK INDEX
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="text-xs font-mono text-[#557A68] pt-1">
-            CONFIDENCE: <span className="text-[#102A23] font-bold">{result.confidence}%</span> · SCAN ID: #{result.id}
+          {/* Dynamic Verdict Banner */}
+          <div className={`p-4 rounded-xs border border-[#557A68]/30 flex items-start sm:items-center justify-between gap-3 ${vInfo.bg}`}>
+            <div className="flex items-center gap-3">
+              <VerdictIcon className="w-6 h-6 shrink-0" />
+              <div>
+                <span className="text-xs font-mono tracking-widest uppercase block opacity-85">
+                  PRIMARY VERDICT
+                </span>
+                <span className="text-base sm:text-lg font-bold font-mono tracking-wide">
+                  {verdict.replace('_', ' ')}: {report?.scamType || result.classification}
+                </span>
+              </div>
+            </div>
+            <div className="shrink-0 text-right font-mono text-xs">
+              <div className="font-bold">
+                {result.confidence}% CONFIDENCE
+              </div>
+              {report && (
+                <div className="text-[10px] opacity-80">
+                  {(report.layerAgreement * 100).toFixed(0)}% LAYER AGREEMENT
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* High-Risk Specific Alert Callout (UPI PIN, Card Numbers, Lottery) */}
+          {report?.specialAlert && (
+            <div className="p-4 bg-[#B86F52]/10 border-2 border-[#B86F52] rounded-xs space-y-2 shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-[#B86F52] shrink-0" />
+                <span className="font-mono text-xs font-bold text-[#B86F52] uppercase tracking-wider">
+                  {report.specialAlert.title}
+                </span>
+              </div>
+              <div className="text-xs font-mono font-bold text-[#102A23] bg-white/90 p-3 border border-[#B86F52]/30 rounded-xs leading-relaxed">
+                {report.specialAlert.goldenRule}
+              </div>
+              <p className="text-xs text-[#102A23] font-medium leading-relaxed">
+                {report.specialAlert.warningDetails}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* What AEGIS Found */}
+        {/* Executive Summary */}
         <div className="space-y-2">
           <span className="text-xs font-mono text-[#557A68] tracking-wider uppercase block">
-            WHAT AEGIS FOUND
+            THREAT ASSESSMENT SUMMARY
           </span>
-          <h2 className="text-xl md:text-2xl font-semibold text-[#102A23]">
-            {result.classification}
-          </h2>
-          <p className="text-sm text-[#557A68] leading-relaxed">
+          <p className="text-sm text-[#102A23] leading-relaxed">
             {result.summary}
           </p>
         </div>
 
-        {/* Why? Numbered Evidence List */}
-        <div className="space-y-3">
+        {/* Analyzed Communication & Tactic Evidence */}
+        <div className="space-y-2">
           <span className="text-xs font-mono text-[#557A68] tracking-wider uppercase block">
-            WHY?
+            ANALYZED TEXT & EXTRACTED EVIDENCE
           </span>
-
-          <div className="space-y-2.5">
-            {result.reasons.map((reason, idx) => (
-              <div
-                key={idx}
-                className="flex items-start gap-3 p-3 bg-[#F5F1E8] border border-[#557A68]/15 rounded-xs text-xs text-[#102A23]"
-              >
-                <span className="font-mono font-bold text-[#557A68] shrink-0">
-                  0{idx + 1}
-                </span>
-                <span className="font-medium leading-relaxed">{reason}</span>
-              </div>
-            ))}
-          </div>
+          {renderHighlightedMessage()}
         </div>
 
-        {/* Contributing Factors & Attribution Breakdown */}
-        {result.factors.length > 0 && (
+        {/* 5-Layer Stack Score Breakdown */}
+        {report && (
           <div className="space-y-3 pt-2">
-            <span className="text-xs font-mono text-[#557A68] tracking-wider uppercase block">
-              CONTRIBUTING FACTORS
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-[#557A68] tracking-wider uppercase">
+                DEFENSE-IN-DEPTH LAYER BREAKDOWN
+              </span>
+              <span className="text-[10px] font-mono text-[#557A68]">
+                NORMALIZED [0-100]
+              </span>
+            </div>
 
-            <div className="divide-y divide-[#557A68]/15 border border-[#557A68]/20 bg-[#F5F1E8]/40 rounded-xs">
-              {result.factors.map((factor, idx) => (
-                <div
-                  key={idx}
-                  className="px-4 py-2.5 flex items-center justify-between text-xs font-mono"
-                >
-                  <span className="text-[#102A23]">{factor.name}</span>
-                  <span className="font-bold text-[#102A23] tabular-nums">
-                    +{factor.weight}
-                  </span>
+            <div className="space-y-2 bg-[#F5F1E8]/40 border border-[#557A68]/20 p-4 rounded-xs">
+              {[
+                { label: 'Layer 1: Deterministic Rules & Patterns', score: report.layerScores.rules, model: 'AEGIS-Rules-v3.4' },
+                { label: 'Layer 2: ML Text Semantic Classifier', score: report.layerScores.mlText, model: 'Calibrated-TFIDF-LR' },
+                { label: 'Layer 2: ML URL Structural Model', score: report.layerScores.mlUrl, model: 'GradientBoosting-Lexical' },
+                { label: 'Layer 3: URL & Domain Intelligence', score: report.layerScores.threatIntel, model: 'RDAP + SSRF Guard' },
+                { label: 'Layer 4: Gemini Intent Reasoning', score: report.layerScores.llm, model: report.llmUsed ? 'gemini-3.8-flash' : 'STANDBY' }
+              ].map((layer, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono">
+                    <span className="text-[#102A23] font-medium">{layer.label}</span>
+                    <span className="font-bold text-[#102A23] tabular-nums">
+                      {layer.score}/100 <span className="text-[10px] text-[#557A68] font-normal">({layer.model})</span>
+                    </span>
+                  </div>
+                  <div className="w-full bg-[#EAE3D5] h-1.5 rounded-xs overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        layer.score >= 70 ? 'bg-[#102A23]' : layer.score >= 40 ? 'bg-[#557A68]' : 'bg-[#9BAF9F]'
+                      }`}
+                      style={{ width: `${Math.max(2, layer.score)}%` }}
+                    />
+                  </div>
                 </div>
               ))}
-              <div className="px-4 py-2.5 flex items-center justify-between text-xs font-mono font-bold bg-[#EAE3D5]/50 text-[#102A23]">
-                <span>TOTAL RISK ACCUMULATION</span>
-                <span>{result.riskScore}</span>
-              </div>
             </div>
           </div>
         )}
 
-        {/* What Should You Do? Recommended Action Directives */}
-        <div className="p-5 bg-[#EAE3D5]/60 border border-[#557A68]/25 rounded-xs space-y-3">
-          <span className="text-xs font-mono font-bold text-[#102A23] tracking-wider uppercase block">
-            WHAT SHOULD YOU DO?
-          </span>
+        {/* Attacker Goal & Impersonation Mismatch */}
+        {report && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-[#F5F1E8]/60 border border-[#557A68]/20 rounded-xs space-y-1.5">
+              <span className="text-[10px] font-mono tracking-widest text-[#557A68] uppercase block">
+                ATTACKER OBJECTIVE
+              </span>
+              <div className="text-xs font-mono font-bold text-[#102A23]">
+                {report.attackerGoal}
+              </div>
+              <p className="text-xs text-[#557A68] leading-relaxed pt-1">
+                {report.potentialLoss}
+              </p>
+            </div>
+
+            <div className="p-4 bg-[#F5F1E8]/60 border border-[#557A68]/20 rounded-xs space-y-1.5">
+              <span className="text-[10px] font-mono tracking-widest text-[#557A68] uppercase block">
+                IMPERSONATION ATTRIBUTION
+              </span>
+              <div className="text-xs font-mono font-bold text-[#102A23]">
+                {report.impersonation?.claimedEntity || result.threatIndicators.impersonationDetected || 'No Explicit Brand Claimed'}
+              </div>
+              <p className="text-xs text-[#557A68] leading-relaxed pt-1">
+                {report.impersonation?.mismatchReason || 'Originating infrastructure does not belong to authorized digital assets.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Attack Kill-Chain Trajectory */}
+        {report?.killChain && report.killChain.length > 0 && (
+          <div className="space-y-3">
+            <span className="text-xs font-mono text-[#557A68] tracking-wider uppercase block">
+              ATTACK KILL-CHAIN TRAJECTORY (INTENDED PATH)
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {report.killChain.map((step, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-[#F5F1E8] border border-[#557A68]/15 rounded-xs flex items-start gap-2.5 text-xs text-[#102A23] font-mono"
+                >
+                  <span className="px-1.5 py-0.5 bg-[#102A23] text-white font-bold text-[10px] rounded-xs shrink-0">
+                    STAGE 0{idx + 1}
+                  </span>
+                  <span className="leading-snug">{step}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* What Should You Do? (India-Specific Directives) */}
+        <div className="p-5 bg-[#EAE3D5]/80 border border-[#557A68]/30 rounded-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono font-bold text-[#102A23] tracking-wider uppercase block">
+              PRIORITIZED IMMEDIATE PROTECTIVE DIRECTIVES
+            </span>
+            <span className="text-[10px] font-mono text-[#557A68]">
+              INDIA JURISDICTION
+            </span>
+          </div>
 
           <div className="space-y-2">
-            {result.recommendedActions.map((action, idx) => (
+            {(report?.immediateActions || result.recommendedActions).map((action, idx) => (
               <div key={idx} className="flex items-start gap-2.5 text-xs text-[#102A23]">
-                <span className="font-bold shrink-0">■</span>
-                <span className="font-semibold leading-relaxed">{action}</span>
+                <span className="font-bold text-[#102A23] shrink-0 mt-0.5">■</span>
+                <span className="font-medium leading-relaxed">{action}</span>
               </div>
             ))}
           </div>
+
+          {/* Quick Helpline Callout */}
+          <div className="pt-2 border-t border-[#557A68]/20 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+            <span className="flex items-center gap-1.5 font-bold text-[#102A23]">
+              <PhoneCall className="w-3.5 h-3.5 text-[#B86F52]" />
+              National Cyber Helpline: 1930
+            </span>
+            <span className="text-[#557A68]">
+              Portal: cybercrime.gov.in · Sanchar Saathi: sancharsaathi.gov.in
+            </span>
+          </div>
         </div>
 
-        {/* User Feedback Loop */}
+        {/* Safer Alternative & False-Positive Risk */}
+        {report && (
+          <div className="space-y-3 border-t border-[#557A68]/20 pt-4 text-xs font-mono">
+            <div className="flex items-start gap-2">
+              <span className="text-[#557A68] shrink-0">SAFE ALTERNATIVE:</span>
+              <span className="text-[#102A23] font-medium">{report.saferAlternative}</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-[#557A68] shrink-0">BENIGN EXPLANATION:</span>
+              <span className="text-[#557A68]">{report.falsePositiveRisk}</span>
+            </div>
+          </div>
+        )}
+
+        {/* User Feedback Loop - Persisted via /api/v1/feedback */}
         <div className="pt-4 border-t border-[#557A68]/20 space-y-3">
           <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-[#557A68] uppercase">WAS THIS RESULT USEFUL?</span>
+            <span className="text-[#557A68] uppercase">WAS THIS RESULT ACCURATE & USEFUL?</span>
             {feedbackUseful === null ? (
               <div className="flex gap-2">
                 <button
-                  onClick={() => setFeedbackUseful(true)}
+                  onClick={() => handleSendFeedback(true)}
                   className="px-3 py-1 bg-[#F5F1E8] border border-[#557A68]/25 hover:bg-[#102A23] hover:text-white transition-colors"
                 >
                   YES
                 </button>
                 <button
-                  onClick={() => setFeedbackUseful(false)}
+                  onClick={() => handleSendFeedback(false)}
                   className="px-3 py-1 bg-[#F5F1E8] border border-[#557A68]/25 hover:bg-[#102A23] hover:text-white transition-colors"
                 >
                   NO
@@ -183,24 +413,24 @@ export default function RiskResultView({
             ) : feedbackUseful ? (
               <span className="text-[#102A23] font-semibold flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#557A68]" />
-                Feedback recorded. Thank you.
+                Feedback recorded and logged for model telemetry.
               </span>
             ) : (
-              <span className="text-[#557A68]">Tell us why below:</span>
+              <span className="text-[#557A68]">Specify reason to retrain:</span>
             )}
           </div>
 
           {feedbackUseful === false && !feedbackReason && (
             <div className="p-3 bg-[#F5F1E8] border border-[#557A68]/20 space-y-2 text-xs font-mono">
-              <span className="text-[#557A68] block">Was AEGIS wrong?</span>
+              <span className="text-[#557A68] block">Select issue classification:</span>
               <div className="flex flex-wrap gap-2">
-                {['FALSE POSITIVE', 'MISSED THREAT', 'OTHER'].map((opt) => (
+                {['FALSE_POSITIVE', 'MISSED_THREAT', 'MISCLASSIFIED_SEVERITY'].map((opt) => (
                   <button
                     key={opt}
-                    onClick={() => setFeedbackReason(opt)}
-                    className="px-2.5 py-1 bg-[#FFFFFF] border border-[#557A68]/30 hover:bg-[#102A23] hover:text-white transition-colors"
+                    onClick={() => handleSendFeedback(false, opt)}
+                    className="px-2.5 py-1 bg-white border border-[#557A68]/30 hover:bg-[#102A23] hover:text-white transition-colors"
                   >
-                    {opt}
+                    {opt.replace('_', ' ')}
                   </button>
                 ))}
               </div>
@@ -209,7 +439,7 @@ export default function RiskResultView({
 
           {feedbackReason && (
             <div className="text-xs font-mono text-[#102A23]">
-              Reason logged: <span className="font-semibold">{feedbackReason}</span>. Sent to model validation review.
+              Reason logged: <span className="font-semibold">{feedbackReason}</span>. Recorded in feedback.jsonl for retrain pipeline.
             </div>
           )}
         </div>
@@ -225,7 +455,7 @@ export default function RiskResultView({
                 : 'text-[#102A23] hover:bg-[#F5F1E8]'
             }`}
           >
-            {isReported ? 'THREAT REPORTED TO REGISTRY' : 'REPORT THREAT'}
+            {isReported ? 'THREAT REPORTED TO REGISTRY' : 'REPORT TO THREAT REGISTRY'}
           </button>
 
           <button

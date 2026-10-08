@@ -17,6 +17,32 @@ export interface RiskFactor {
   evidence: string;
 }
 
+export type ThreatVerdict = 'SCAM' | 'LIKELY_SCAM' | 'SUSPICIOUS' | 'LIKELY_SAFE' | 'SAFE';
+
+export interface ThreatReport {
+  verdict: ThreatVerdict;
+  scamType: string;
+  attackerGoal: string;
+  tactics: { name: string; evidence: string }[];
+  impersonation: { claimedEntity: string; verified: boolean; mismatchReason?: string } | null;
+  indicators: { type: 'URL' | 'PHONE' | 'UPI_ID' | 'DOMAIN' | 'ACCOUNT'; value: string; risk: number; note: string }[];
+  layerScores: { rules: number; mlText: number; mlUrl: number; threatIntel: number; llm: number };
+  layerAgreement: number; // 0-1
+  killChain: string[];
+  potentialLoss: string;
+  immediateActions: string[];
+  saferAlternative: string;
+  falsePositiveRisk: string;
+  llmUsed: boolean;
+  modelVersions: Record<string, string>;
+  specialAlert?: {
+    type: 'UPI_PIN_TRAP' | 'CARD_NUMBER_HARVEST' | 'LOTTERY_SCAM';
+    title: string;
+    goldenRule: string;
+    warningDetails: string;
+  };
+}
+
 export interface ScanResult {
   id: string;
   timestamp: string;
@@ -54,6 +80,7 @@ export interface ScanResult {
     datasetSimilarity: number;
     latencyMs: number;
   };
+  threatReport?: ThreatReport;
 }
 
 export interface ThreatEntity {
